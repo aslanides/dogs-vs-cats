@@ -8,11 +8,12 @@ PROC_PATH <- 'data/processed/'
 train_files <- list.files('data/raw/train/')
 test_files <- list.files('data/raw/test/')
 
+
 # Pre-process names
 train_data <- data_frame(raw_name = train_files) %>%
   tbl_df() %>%
   mutate(id = str_pad(str_extract(raw_name, '\\d+'), 5, pad = '0'),
-         class = ifelse(str_detect(raw_name, 'dog'), 'dog', 'cat')) %>%
+         class = ifelse(str_detect(raw_name, 'dog'), 1, 0)) %>%
   arrange(class, id)
 
 test_data <- data_frame(raw_name = test_files) %>%
@@ -31,39 +32,40 @@ registerDoSNOW(cl)
 convert_img <- function(x, data_class) {
   RAW_PATH <- 'data/raw/'
   PROC_PATH <- 'data/processed/'
+  hist.eq <- function(im) as.cimg(ecdf(im)(im),dim=dim(im))
   
-  foreach(i = iter(x, by='row'), .combine = rbind, .packages = c('magick', 'magrittr', 'stringr')) %dopar% {
+  foreach(i = iter(x, by='row'), .combine = rbind, .packages = c('imager', 'magrittr', 'stringr')) %dopar% {
     read_path  <- str_c(RAW_PATH, data_class, '/', i$raw_name)
     write_path <- str_c(PROC_PATH, data_class, '/', i$class, i$id, '.jpg')
 
-    img <- image_read(read_path)
+    img <- load.image(read_path) %>%
+      grayscale() %>%
+      hist.eq()
     
-    img_x <- image_info(img)$width
-    img_y <- image_info(img)$height
+    # Pad images with black bar to set 1:1 aspect ratio
+    img_x <- dim(img)[1]
+    img_y <- dim(img)[2]
+    if(img_x > img_y) {
+      img %<>% pad(img_x - img_y, "y", 1)
+    } else {
+      img %<>% pad(img_y - img_x, "x", 1)
+    }
     
-    img <- image_scale(img, str_c(2 * img_x, 'x', 2 * img_y))
+    img %<>% resize(64, 64)
     
-    img_fill_x <- max(0, img_y - img_x)
-    img_fill_y <- max(0, img_x - img_y)
-
-    img_scaled <-
-      image_border(img, "grey", str_c(img_fill_x, 'x', img_fill_y)) %>%
-      image_scale("64x64")
-
-    image_write(img_scaled, write_path, format = 'jpg')
-
-    img_data <- image_write(img_scaled, format = 'rgba') %>% as.integer()
+    save.image(img, write_path)
     
-    return(c(as.vector(i), img_data))
+    return(c(i[[1]], i[[2]], i[[3]], as.data.frame(img)$value))
   }
 }
 
-train_df <- convert_img(train_data[1:10,], 'train') %>%
+
+train_df <- convert_img(train_data, 'train') %>%
   as.data.frame()
 #test_df <- convert_img(test_data, 'test')
 
 stopCluster(cl)
 
-write_csv(train_df, 'data/train.csv')
-write_csv(test_df, 'data/train.csv')
+write_csv(train_df, 'data/train.csv', col_names = F)
+#write_csv(test_df, 'data/train.csv', col_names = F)
 

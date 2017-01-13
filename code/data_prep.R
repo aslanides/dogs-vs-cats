@@ -36,7 +36,7 @@ convert_img <- function(x, data_class) {
   
   foreach(i = iter(x, by='row'), .combine = rbind, .packages = c('imager', 'magrittr', 'stringr')) %dopar% {
     read_path  <- str_c(RAW_PATH, data_class, '/', i$raw_name)
-    write_path <- str_c(PROC_PATH, data_class, '/', i$class, i$id, '.jpg')
+    write_path <- str_c(PROC_PATH, data_class, '/', i$class, '_', i$id, '.jpg')
 
     img <- load.image(read_path) %>%
       grayscale() %>%
@@ -51,11 +51,12 @@ convert_img <- function(x, data_class) {
       img %<>% pad(img_y - img_x, "x", 1)
     }
     
-    img %<>% resize(64, 64)
+    img %<>% resize(64, 64) %>%
+      renorm()
     
     save.image(img, write_path)
     
-    return(c(i[[1]], i[[2]], i[[3]], as.data.frame(img)$value))
+    return(c(i[[1]], i[[2]], i[[3]], floor(as.data.frame(img)$value)))
   }
 }
 
